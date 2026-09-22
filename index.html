@@ -32,7 +32,7 @@
     <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
       <div class="flex items-center gap-2">
         <i data-lucide="newspaper" class="text-blue-500 w-7 h-7"></i>
-        <h1 class="text-xl font-bold tracking-wide bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+        <h1 class="text-xl font-bold tracking-wide bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
           Radar Notícias
         </h1>
       </div>
@@ -101,9 +101,16 @@
     // Proxies CORS usados como fallback em cascata (o primeiro que funcionar é usado)
     const PROXIES = [
       (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-      (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-      (url) => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&_=${Date.now()}`
+      (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
     ];
+
+    const TIMEOUT_MS = 7000;
+
+    function fetchComTimeout(url, ms) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ms);
+      return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+    }
 
     // Busca e converte um feed RSS em uma lista de itens no formato interno do app
     async function buscarFeed(url) {
@@ -112,20 +119,11 @@
       for (const montarProxyUrl of PROXIES) {
         try {
           const proxyUrl = montarProxyUrl(url);
-          const res = await fetch(proxyUrl);
+          const res = await fetchComTimeout(proxyUrl, TIMEOUT_MS);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-          const textoOuJson = await res.text();
-
-          // Caso o proxy seja o rss2json (retorna JSON pronto)
-          if (proxyUrl.includes('rss2json.com')) {
-            const data = JSON.parse(textoOuJson);
-            if (data.status === 'ok' && data.items?.length) return data.items;
-            throw new Error('rss2json sem itens');
-          }
-
-          // Caso contrário, é XML puro (RSS) — parseamos manualmente
-          const itens = parseRSS(textoOuJson);
+          const xmlTexto = await res.text();
+          const itens = parseRSS(xmlTexto);
           if (itens.length) return itens;
           throw new Error('XML sem itens');
         } catch (err) {
