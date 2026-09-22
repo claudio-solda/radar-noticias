@@ -98,6 +98,72 @@
     const IMAGEM_PADRAO = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=600&q=80';
     let categoriaAtual = 'geral';
 
+    // Proxies CORS usados como fallback em cascata (o primeiro que funcionar é usado)
+    const PROXIES = [
+      (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+      (url) => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&_=${Date.now()}`
+    ];
+
+    // Busca e converte um feed RSS em uma lista de itens no formato interno do app
+    async function buscarFeed(url) {
+      let ultimoErro = null;
+
+      for (const montarProxyUrl of PROXIES) {
+        try {
+          const proxyUrl = montarProxyUrl(url);
+          const res = await fetch(proxyUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          const textoOuJson = await res.text();
+
+          // Caso o proxy seja o rss2json (retorna JSON pronto)
+          if (proxyUrl.includes('rss2json.com')) {
+            const data = JSON.parse(textoOuJson);
+            if (data.status === 'ok' && data.items?.length) return data.items;
+            throw new Error('rss2json sem itens');
+          }
+
+          // Caso contrário, é XML puro (RSS) — parseamos manualmente
+          const itens = parseRSS(textoOuJson);
+          if (itens.length) return itens;
+          throw new Error('XML sem itens');
+        } catch (err) {
+          ultimoErro = err;
+          continue; // tenta o próximo proxy
+        }
+      }
+
+      throw ultimoErro || new Error('Todas as fontes falharam');
+    }
+
+    // Converte um XML de RSS em um array de itens { title, link, pubDate, description, thumbnail, author }
+    function parseRSS(xmlTexto) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlTexto, 'text/xml');
+
+      if (xml.querySelector('parsererror')) return [];
+
+      const items = Array.from(xml.querySelectorAll('item'));
+      return items.map(item => {
+        const get = (tag) => item.querySelector(tag)?.textContent?.trim() || '';
+
+        let thumbnail = item.querySelector('enclosure')?.getAttribute('url')
+          || item.getElementsByTagName('media:thumbnail')[0]?.getAttribute('url')
+          || item.getElementsByTagName('media:content')[0]?.getAttribute('url')
+          || '';
+
+        return {
+          title: get('title'),
+          link: get('link'),
+          pubDate: get('pubDate'),
+          description: get('description'),
+          author: get('author') || get('dc:creator'),
+          thumbnail
+        };
+      });
+    }
+
     async function carregarNoticias() {
       const loading = document.getElementById('loading');
       const container = document.getElementById('news-container');
@@ -114,16 +180,11 @@
       try {
         const urls = FEEDS[categoriaAtual];
 
-        const resultados = await Promise.allSettled(
-          urls.map(url =>
-            fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`)
-              .then(res => res.json())
-          )
-        );
+        const resultados = await Promise.allSettled(urls.map(buscarFeed));
 
         resultados.forEach(r => {
-          if (r.status === 'fulfilled' && r.value.status === 'ok') {
-            todasNoticias = todasNoticias.concat(r.value.items);
+          if (r.status === 'fulfilled' && r.value?.length) {
+            todasNoticias = todasNoticias.concat(r.value);
           } else {
             algumErro = true;
           }
