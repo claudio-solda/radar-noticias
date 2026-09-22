@@ -1,6 +1,6 @@
-const CACHE_NAME = 'radar-noticias-v1';
+const CACHE_NAME = 'radar-noticias-v2';
 const ASSETS = [
-  './radar-noticias.html',
+  './index.html',
   './manifest.json'
 ];
 
