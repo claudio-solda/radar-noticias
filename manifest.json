@@ -2,7 +2,7 @@
   "name": "Radar de Notícias",
   "short_name": "Radar Notícias",
   "description": "Feed de notícias do Brasil e do mundo, com categorias de tecnologia, esportes e economia.",
-  "start_url": "./radar-noticias.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
